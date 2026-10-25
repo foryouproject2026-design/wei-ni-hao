@@ -347,20 +347,22 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
 
   function textMorph(i,t,release,to){
-    const elapsed=Math.max(0,t-release);
-    const finish=smooth(release+1.2,release+17+rand(i,473)*3,t);
-    const v=burstVector(i),open=smooth(0,2.2,elapsed);
-    const spread=.30*open;
-    const turn=(1-finish)*(.65+elapsed*.055);
-    const cloudX=(v.x*Math.cos(turn)+v.z*Math.sin(turn))*spread;
-    const cloudZ=(v.z*Math.cos(turn)-v.x*Math.sin(turn))*spread;
-    const loose=Math.pow(1-finish,1.4)*open;
-    const drift=scale*.12*loose;
+    // Independent departures and routes assemble the sentence in a random order.
+    const departure=release+rand(i,761)*8;
+    const duration=5+rand(i,762)*8;
+    const finish=smooth(departure,departure+duration,t);
+    const envelope=Math.sin(Math.PI*finish)*(1-finish);
+    const bendX=(rand(i,763)-.5)*scale*.95;
+    const bendY=(rand(i,764)-.5)*scale*.95;
+    const seedAngle=rand(i,765)*TAU;
+    const seedRadius=Math.sqrt(rand(i,766))*16;
+    const startX=W/2+Math.cos(seedAngle)*seedRadius;
+    const startY=H/2+Math.sin(seedAngle)*seedRadius;
     return {
-      x:mix(W/2+cloudX,to.x,finish)+wanderingNoise(t*.24,i+751)*drift,
-      y:mix(H/2+v.y*spread,to.y,finish)+wanderingNoise(t*.22,i+752)*drift,
-      z:cloudZ*(1-finish)+wanderingNoise(t*.20,i+753)*drift,
-      finish
+      x:mix(startX,to.x,finish)+bendX*envelope,
+      y:mix(startY,to.y,finish)+bendY*envelope,
+      z:(rand(i,767)-.5)*scale*.6*envelope,
+      finish,departure
     };
   }
   function animationTime(progress,legEnd){
@@ -398,11 +400,12 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       let o=driftingDust(plan.cloud[i],t);
       const breakup=clamp(burstTravel(Math.max(0,t-rand(i,734)*.65))/burstTravel(6)),group=-1,localPack=0;
       const q=Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0;
-      const release=releaseBase+rand(i,284)*.75,out=smooth(release,release+.55,t);
+      const release=releaseBase;
       // Prey never moves toward a hunter. Contact only changes its visibility.
       let x=mix(from.x,o.x,breakup),y=mix(from.y,o.y,breakup);
-      // Reference: a compact moving cloud stretches continuously into the strokes.
+      // Assemble in scattered, independent departures rather than a synchronized radial burst.
       const morph=textMorph(i,t,release,to),finish=morph.finish;
+      const out=smooth(morph.departure,morph.departure+.45,t);
       if(t>=release){x=morph.x;y=morph.y;}
       // Ambient motion continues at a fixed angle; absorption stages stay angle-driven.
       const floatEnvelope=breakup*(1-finish)*(1-q)*(1-out);
@@ -425,7 +428,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       p.y=p.targetY+(errorY+driftY)*decay;
       p.vx=(p.vx-omega*driftX)*decay;
       p.vy=(p.vy-omega*driftY)*decay;
-      if(breakup===1 && t<releaseBase){
+      if((breakup===1 && t<releaseBase) || t>=releaseBase){
         p.x=p.targetX;p.y=p.targetY;p.vx=0;p.vy=0;
       }
       const seat=1-Math.pow(1-smooth(legEnd-7,legEnd,t),frameStep);
@@ -674,7 +677,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   Object.assign(UI,{title:'為你好 / 選擇',subtitle:'轉到 180° 顯示第二句，360° 回到第一句。',gyro:'啟用旋轉感應',gyroOff:'停用旋轉感應',ready:'左右拖曳或滑動角度，轉動話語。',manualHelp:'左右拖曳或使用滑桿；反向操作可逐步還原。',paused:'預覽已暫停，粒子會停留在目前階段。'});
   document.querySelectorAll('[data-label]').forEach(el=>el.textContent=UI[el.dataset.label]||'');
   $('sourceText').textContent='';$('targetText').textContent='';
-  document.title='為你好｜選擇・快速巡遊／小點緩慢內聚';
+  document.title='\u5927\u9ede\u6563\u958b\u5f8c\u6392\u5217\u6210\u6587\u5b57 | 為你好｜選擇・快速巡遊／小點緩慢內聚';
   document.querySelector('.brand').innerHTML='FOR YOUR OWN GOOD<br>INTERACTIVE STUDY / 快速巡遊／小點緩慢內聚';
   canvas.setAttribute('aria-label','白色圓形粒子組成的選擇情境，拖曳可改變角度');
   $('scrub').setAttribute('aria-label','旋轉角度 0 至 360 度');

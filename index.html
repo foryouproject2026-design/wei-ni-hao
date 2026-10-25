@@ -35,28 +35,6 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
 @media (max-width:520px){.hud{padding-left:20px;padding-right:20px}.brand{font-size:8px;letter-spacing:.14em}h1{font-size:16px}.subtitle{font-size:9px}.tag{font-size:8px}.top-actions{gap:12px}.buttons{gap:7px}.btn{padding:10px 13px;font-size:10px}.btn.primary{min-width:104px}.angle{font-size:27px}.stage{font-size:10px}.ticks{margin-bottom:14px}.status{font-size:9px}.btn.minor{padding:10px}.meter{margin-bottom:8px}}
 @media(max-height:540px){h1,.subtitle{display:none}.hud{padding:15px 22px}.brand{font-size:8px}.top-actions{margin-top:4px}.meter{margin-bottom:0}.angle{font-size:23px}.ticks{margin:0 0 8px}.status{display:none}.btn{padding:6px 12px;min-height:29px}.buttons{justify-content:center}footer{max-width:520px}.stage{font-size:9px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
-
-/* Mobile touch targets and safe-area layout. */
-html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;height:100dvh}
-.hud{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));padding-top:max(18px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
-button,a,input,summary{-webkit-tap-highlight-color:transparent}
-@media(max-width:600px){
-.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.btn{min-height:44px;padding:10px 12px}
-.link,summary.link{min-height:40px;display:inline-flex;align-items:center}
-.top-actions{gap:16px;margin-top:4px}
-input[type=range]{height:40px}
-input[type=range]::-webkit-slider-thumb{width:18px;height:18px;margin-top:-8.5px}
-input[type=range]::-moz-range-thumb{width:17px;height:17px}
-.ticks{margin:0 0 10px}.tick{min-width:40px;min-height:32px}
-.status{margin-top:8px;font-size:10px}.subtitle{max-width:210px;line-height:1.7}
-}
-@media(max-height:540px) and (orientation:landscape){
-.buttons{display:flex;justify-content:center}.btn{min-height:36px}
-.status,.subtitle{display:none}.ticks{margin:0}.tick{min-height:24px}
-input[type=range]{height:26px}footer{max-width:620px}
-}
-
 </style>
 </head>
 <body>
@@ -343,10 +321,10 @@ input[type=range]{height:26px}footer{max-width:620px}
   }
   function render(angle){
     if(!ready)return;
-    const a=cycle(angle),leg=Math.floor(a/90)%2,unit=Math.max(.7,Math.min(1.25,scale/100));
+    const a=cycle(angle),leg=Math.floor(a/180)%2,unit=Math.max(.7,Math.min(1.25,scale/100));
     const plan=roamingPlan(leg),legEnd=plan.completed+25.5;
     // End each leg as soon as the sentence forms, then begin its breakup.
-    const t=(a%90)/90*legEnd,sample=clamp((t-28)/.078,0,1000),k=Math.floor(sample);
+    const t=(a%180)/180*legEnd,sample=clamp((t-28)/.078,0,1000),k=Math.floor(sample);
     const h=plan.frames[k],next=plan.frames[Math.min(1000,k+1)];
     const home=smooth(Math.min(133,plan.completed-12),Math.min(145,plan.completed),t);
     const depart=smooth(28,30,t);
@@ -452,14 +430,14 @@ input[type=range]{height:26px}footer{max-width:620px}
   }
   const paint=render;
   function resize(){
-    W=innerWidth;H=innerHeight;DPR=Math.min(devicePixelRatio||1,matchMedia("(pointer:coarse)").matches?1.5:2);
+    W=innerWidth;H=innerHeight;DPR=Math.min(devicePixelRatio||1,2);
     canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
     canvas.style.width=W+'px';canvas.style.height=H+'px';
     if(ready){huntPaths=[null,null];mesoPlans=[null,null];rebuild();paint(current);}
   }
   function stage(p){
-    const t=((p*360)%90)/90*(activeRelease+24);
-    if(t<.1)return Math.floor(p*4)%2===0?'01 / 決定・正向':'01 / 期待・倒置';
+    const t=((p*360)%180)/180*(activeRelease+24);
+    if(t<.1)return Math.floor(p*2)%2===0?'01 / 決定・正向':'01 / 期待・倒置';
     if(t<3)return '02 / 隨機散開';
     if(t<12)return '03 / 漂浮中開始凝聚';
     if(t<28)return '04 / 凝聚成大點';
@@ -626,14 +604,14 @@ input[type=range]{height:26px}footer{max-width:620px}
   window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(resize,120);},{passive:true});
 
 
-  Object.assign(UI,{title:'為你好 / 選擇',subtitle:'每轉 90° 切換一句，180° 回到第一句。',gyro:'啟用旋轉感應',gyroOff:'停用旋轉感應',ready:'左右拖曳或滑動角度，轉動話語。',manualHelp:'左右拖曳或使用滑桿；反向操作可逐步還原。',paused:'預覽已暫停，粒子會停留在目前階段。'});
+  Object.assign(UI,{title:'為你好 / 選擇',subtitle:'轉到 180° 顯示第二句，360° 回到第一句。',gyro:'啟用旋轉感應',gyroOff:'停用旋轉感應',ready:'左右拖曳或滑動角度，轉動話語。',manualHelp:'左右拖曳或使用滑桿；反向操作可逐步還原。',paused:'預覽已暫停，粒子會停留在目前階段。'});
   document.querySelectorAll('[data-label]').forEach(el=>el.textContent=UI[el.dataset.label]||'');
   $('sourceText').textContent='';$('targetText').textContent='';
-  document.title='為你好｜選擇・手機版';
+  document.title='為你好｜選擇・快速巡遊／小點緩慢內聚';
   document.querySelector('.brand').innerHTML='FOR YOUR OWN GOOD<br>INTERACTIVE STUDY / 快速巡遊／小點緩慢內聚';
   canvas.setAttribute('aria-label','白色圓形粒子組成的選擇情境，拖曳可改變角度');
   $('scrub').setAttribute('aria-label','旋轉角度 0 至 360 度');
-  document.querySelector('.sr-only').textContent='0° 我們都決定好了；90° 你就該完成你的夢想，整句倒置；180° 第一句；270° 第二句；360° 回到第一句。';
+  document.querySelector('.sr-only').textContent='0° 我們都決定好了；180° 你就該完成你的夢想，整句倒置；360° 回到第一句。';
   window.vortex={setAngle:a=>manual(a,true),getStats:()=>({count:particles.length,angle:current,target,width:W,height:H,sensor,auto,quality}),getSource:()=>DATA,setClean,particles:()=>particles,cores:()=>coreState,middle:()=>lastMeso};
   window.vortex.ready=(async()=>{
     resize();

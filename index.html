@@ -74,7 +74,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   let target=0,current=0,vel=0,last=performance.now(),lastPaint=NaN,lastUI=0;
   let auto=false,autoOrigin=0,autoBegin=0,autoDuration=18000;
   let sensor=false,sensorGotData=false,prevQ=null,accum=0,timeoutID=0;
-  let direction=1,sensitivity=1,sensorType='roll',rawHeading=null;
+  let direction=1,sensitivity=1,sensorType='roll',rawHeading=null,rawRoll=0;
   let gain=1,clean=false,scrubbing=false;
   const params=new URLSearchParams(location.search);
   let lockedForCapture=params.has('clean');
@@ -240,14 +240,21 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       y:H/2+(dx*sa+dy*ca)*(1-pull)+wanderingNoise(t*(o.rate*.71+.013),o.key+2)*o.sway*drift};
   }
   let roamingCache=[null,null],activeRelease=70;
+  function burstVector(i){
+    const azimuth=rand(i,731)*TAU;
+    const depth=rand(i,732)*2-1;
+    const plane=Math.sqrt(1-depth*depth);
+    const distance=scale*(.65+Math.pow(rand(i,733),.55)*2.3);
+    return {x:Math.cos(azimuth)*plane*distance,
+      y:Math.sin(azimuth)*plane*distance,z:depth*distance*1.4};
+  }
+  function burstTravel(elapsed){
+    return elapsed<=0?0:1-Math.exp(-elapsed*.75);
+  }
   function organicScatter(i,salt){
-    // Uneven radial lobes have no straight sides, corners, or equally spaced arms.
-    const theta=rand(i,salt)*TAU;
-    const edge=.76+.24*Math.sin(theta*3+.7)+.16*Math.cos(theta*5-1.3)+.10*Math.sin(theta*7+.4);
-    const radius=Math.pow(rand(i,salt+1),.65)*edge*(.78+rand(i,salt+2)*.30);
-    const reach=Math.min(W*.29,H*.18,scale*1.3);
-    return {x:W/2+Math.cos(theta)*radius*reach,
-      y:H/2+Math.sin(theta)*radius*reach*1.08};
+    const v=burstVector(i);
+    const fit=Math.min(1,(W*.42)/(scale*2.95),(H*.3)/(scale*2.95));
+    return {x:W/2+v.x*fit,y:H/2+v.y*fit};
   }
   function roamingPlan(leg){
     if(roamingCache[leg]?.particles===particles)return roamingCache[leg];
@@ -267,101 +274,139 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       for(let k=0;k<41;k++){const p=driftingDust(o,k*4);track[k*2]=p.x;track[k*2+1]=p.y;}
       o.track=track;
     }
-    const start=particles.map(()=>Infinity),end=particles.map(()=>Infinity),seedGroup=particles.map(()=>-1),mediumSites=[];
-    let mass=0,x=W/2,y=H/2;
-    const seedCount=Math.round(particles.length*.14);
-    const distributed=particles.map((p,i)=>i).sort((a,b)=>rand(a,391)-rand(b,391)).slice(0,seedCount);
-    const groupCount=5+Math.floor(rand(leg,460)*5);
-    for(let j=0;j<groupCount;j++){
-      const site=cloud[distributed[Math.floor(rand(j+leg*37,461)*seedCount)]];
-      mediumSites.push({...site,packStart:3+rand(j,462)*4,packEnd:9+rand(j,463)*5,
-        affinity:.65+rand(j,464)*.8});
+    const start=particles.map(()=>Infinity),end=particles.map(()=>Infinity);
+    const owner=particles.map(()=>-1);
+    const hunterCount=18+Math.floor(rand(leg,619)*9);
+    const hunters=Array.from({length:hunterCount},(_,j)=>({
+      birth:j===0?8:14+Math.pow(rand(j+leg*71,621),.8)*46, x:cloud[Math.floor(rand(j+leg*17,620)*cloud.length)].x,
+      y:cloud[Math.floor(rand(j+leg*17,620)*cloud.length)].y,
+      mass:0,goal:-1,vx:0,vy:0,nextTurn:0,visit:0,
+      speed:.009+rand(j+leg*19,622)*.018,
+      mergeDelay:rand(j+leg*19,623)*4,
+      bend:(rand(j+leg*19,624)-.5)*scale*1.5,frames:[]
+    }));
+    // One hunter starts first; new hunters appear later and chase nearby dust.
+    for(let k=0;k<=4000;k++){
+      const t=8+k*.098;
+      const dust=cloud.map(o=>driftingDust(o,t));
+      hunters.forEach((h,j)=>{
+        if(t>=h.birth){
+          if(h.goal<0 || owner[h.goal]>=0 || t>=h.nextTurn){
+            h.visit++;h.nextTurn=t+1.4+rand(j+h.visit*29,625)*5;
+            h.goal=-1;let best=Infinity;
+            for(let i=0;i<cloud.length;i++)if(owner[i]<0){
+              const d=Math.hypot(dust[i].x-h.x,dust[i].y-h.y);
+              const score=(d+scale*.08)*(.25+rand(i,j*103+h.visit*37+630)*1.5);
+              if(score<best){best=score;h.goal=i;}
+            }
+          }
+          if(h.goal>=0){
+            const dx=dust[h.goal].x-h.x,dy=dust[h.goal].y-h.y;
+            const d=Math.hypot(dx,dy);
+            const pulse=.55+.45*(.5+.5*Math.sin(t*(.7+rand(j,626)) +j*2.7));
+            const step=Math.min(d,scale*h.speed*pulse);
+            const turn=Math.sin(t*(.24+rand(j,627)*.5)+j*3.1)*.75;
+            let moveX=d?(dx*Math.cos(turn)-dy*Math.sin(turn))/d*step:0;
+            let moveY=d?(dx*Math.sin(turn)+dy*Math.cos(turn))/d*step:0;
+            for(const other of hunters)if(other!==h && t>=other.birth){
+              const sx=h.x-other.x,sy=h.y-other.y,separation=Math.hypot(sx,sy);
+              if(separation>0 && separation<scale*.22){
+                const push=(1-separation/(scale*.22))*scale*.004;
+                moveX+=sx/separation*push;moveY+=sy/separation*push;
+              }
+            }
+            h.vx=mix(h.vx,moveX,.16);h.vy=mix(h.vy,moveY,.16);
+            h.x=clamp(h.x+h.vx,16,W-16);h.y=clamp(h.y+h.vy,16,H-16);
+            const radius=(1.8+Math.sqrt(h.mass)*.55)*Math.max(.7,Math.min(1.25,scale/100));
+            for(let i=0;i<cloud.length;i++)if(owner[i]<0 && Math.hypot(dust[i].x-h.x,dust[i].y-h.y)<radius){
+              owner[i]=j;start[i]=t;end[i]=t+.14;
+              h.mass+=particles[i].radius**2;
+            }
+          }
+        }
+        h.frames.push({x:h.x,y:h.y});
+      });
+      if(t>61 && owner.every(j=>j>=0))break;
     }
-    distributed.forEach((i,j)=>{
-      // Independent local catchments form at unequal locations and different times.
-      let nearest=0,best=Infinity;
-      mediumSites.forEach((site,g)=>{const d=Math.hypot(cloud[i].x-site.x,cloud[i].y-site.y)*site.affinity;if(d<best){best=d;nearest=g;}});
-      seedGroup[i]=nearest;
-      const site=mediumSites[nearest];
-      start[i]=site.packEnd+2+rand(i,280)*3;end[i]=Math.min(28,start[i]+6+rand(i,281)*3);mass+=particles[i].radius**2;
-    });
-    const frames=[];
-    // Fast, non-repeating sweeps chase the slowly moving dust field.
-    let vx=0,vy=0,goal=-1,nextTurn=0,visit=0,drifting=[];
-    for(let k=0;k<=1000;k++){
-      const t=28+k*.078;
-      if(k%8===0)drifting=cloud.map(o=>driftingDust(o,t));
-      if(goal<0||Number.isFinite(start[goal])||k>=nextTurn){
-        goal=-1;let best=-Infinity;visit++;
-        nextTurn=k+12+Math.floor(rand(visit,351+leg)*38);
-        for(let i=0;i<cloud.length;i++)if(!Number.isFinite(start[i])){
-          const d=Math.hypot(drifting[i].x-x,drifting[i].y-y);
-          const weight=.30+Math.exp(-d/(scale*1.5));
-          const score=Math.log(Math.max(.000001,rand(i,visit*17+leg*31)))/weight;
-          if(score>best){best=score;goal=i;}
+    // Any final isolated dots are visited physically, never assigned at a distance.
+    for(let i=0;i<cloud.length;i++)if(owner[i]<0){
+      const h=hunters[0];
+      for(let step=0;step<2000;step++){
+        const t=8+h.frames.length*.098,point=driftingDust(cloud[i],t);
+        const dx=point.x-h.x,dy=point.y-h.y,d=Math.hypot(dx,dy);
+        const travel=Math.min(d,scale*.035);
+        if(d){h.x+=dx/d*travel;h.y+=dy/d*travel;}
+        hunters.forEach(other=>other.frames.push({x:other.x,y:other.y}));
+        if(d<=travel+1.8+Math.sqrt(h.mass)*.55){
+          owner[i]=0;start[i]=t;end[i]=t+.14;h.mass+=particles[i].radius**2;break;
         }
       }
-      if(goal>=0){
-        const dx=drifting[goal].x-x,dy=drifting[goal].y-y,d=Math.hypot(dx,dy);
-        const speed=scale*(.054+.068*(.5+.5*wanderingNoise(k*.047,353+leg)));
-        const travel=Math.min(d,speed);
-        if(d>0){vx=vx*.28+dx/d*travel*.72;vy=vy*.28+dy/d*travel*.72;}
-        x=clamp(x+vx,40,W-40);y=clamp(y+vy,H*.18,H*.76);
-        const radius=44*(1-Math.exp(-Math.sqrt(mass)*.8/44));
-        for(let i=0;i<cloud.length;i++)if(!Number.isFinite(start[i])&&Math.hypot(drifting[i].x-x,drifting[i].y-y)<radius+scale*.13){
-          start[i]=t+rand(i,282)*.3;end[i]=start[i]+.9+rand(i,283)*1.5;
-          mass+=particles[i].radius**2;
-        }
-      }
-      frames.push({x,y});
-      if(goal<0){while(frames.length<1001)frames.push({x,y});break;}
     }
-    const completed=Math.max(...end.filter(Number.isFinite));
-    return roamingCache[leg]={particles,cloud,start,end,frames,completed,seedGroup,mediumSites};
+    const completed=Math.max(...end);
+    return roamingCache[leg]={particles,cloud,start,end,completed,owner,hunters};
+  }
+
+  function textMorph(i,t,release,to){
+    const elapsed=Math.max(0,t-release);
+    const finish=smooth(release+1.2,release+17+rand(i,473)*3,t);
+    const v=burstVector(i),open=smooth(0,2.2,elapsed);
+    const spread=.30*open;
+    const turn=(1-finish)*(.65+elapsed*.055);
+    const cloudX=(v.x*Math.cos(turn)+v.z*Math.sin(turn))*spread;
+    const cloudZ=(v.z*Math.cos(turn)-v.x*Math.sin(turn))*spread;
+    const loose=Math.pow(1-finish,1.4)*open;
+    const drift=scale*.12*loose;
+    return {
+      x:mix(W/2+cloudX,to.x,finish)+wanderingNoise(t*.24,i+751)*drift,
+      y:mix(H/2+v.y*spread,to.y,finish)+wanderingNoise(t*.22,i+752)*drift,
+      z:cloudZ*(1-finish)+wanderingNoise(t*.20,i+753)*drift,
+      finish
+    };
+  }
+  function animationTime(progress,legEnd){
+    // Complete aggregation in the first 42% of the half-turn.
+    const joined=legEnd-24;
+    return progress<=.42?progress/.42*joined:mix(joined,legEnd,(progress-.42)/.58);
   }
   function render(angle){
     if(!ready)return;
     const a=cycle(angle),leg=Math.floor(a/180)%2,unit=Math.max(.7,Math.min(1.25,scale/100));
-    const plan=roamingPlan(leg),legEnd=plan.completed+25.5;
-    // End each leg as soon as the sentence forms, then begin its breakup.
-    const t=(a%180)/180*legEnd,sample=clamp((t-28)/.078,0,1000),k=Math.floor(sample);
-    const h=plan.frames[k],next=plan.frames[Math.min(1000,k+1)];
-    const home=smooth(Math.min(133,plan.completed-12),Math.min(145,plan.completed),t);
-    const depart=smooth(28,30,t);
-    const c={x:mix(W/2,mix(mix(h.x,next.x,sample-k),W/2,home),depart),
-      y:mix(H/2,mix(mix(h.y,next.y,sample-k),H/2,home),depart),mass:0,radius:0,swallowed:0};
-    coreState=[c];lastMeso=[];
+    const plan=roamingPlan(leg),legEnd=plan.completed+35;
+    // Hold exact sentence endpoints while allowing a little sensor jitter.
+    const t=animationTime(clamp(((a%180)-3)/174),legEnd);
+    const lastFrame=plan.hunters[0].frames.length-1;
+    const sample=clamp((t-8)/.098,0,lastFrame),k=Math.floor(sample);
+    const merge=clamp((t-plan.completed)/11);
+    const cores=plan.hunters.map(h=>{
+      const point=h.frames[k],next=h.frames[Math.min(lastFrame,k+1)];
+      const localMerge=merge;
+      return {x:mix(mix(point.x,next.x,sample-k),W/2,localMerge),
+        y:mix(mix(point.y,next.y,sample-k),H/2,localMerge),
+        z:((rand(h.birth,710)-.5)*scale*4.8+wanderingNoise(t*.035,h.birth+711)*scale*.6)*(1-merge),
+        mass:0,radius:0,swallowed:0};
+    });
+    coreState=cores;lastMeso=[];
     ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';
-    const releaseBase=plan.completed+1.5;activeRelease=releaseBase;
+    const releaseBase=plan.completed+11;activeRelease=releaseBase;
     const medium=new Map();
     const floatTime=performance.now()*.0006;
     const motionStep=Math.max(0,frameStep);
     const scene=[];
     for(const p of particles){
       const i=p.seed,ph=p.noiseOffset,from=leg?p.originB:p.originA,to=leg?p.originA:p.originB;
+      const c=cores[plan.owner[i]];
       let o=driftingDust(plan.cloud[i],t);
-      const breakup=smooth(0,6,t),group=plan.seedGroup[i];
-      const site=group<0?null:plan.mediumSites[group];
-      const localPack=group<0?0:smooth(site.packStart+rand(i,290)*2,site.packEnd+rand(i,291),t)*(1-smooth(releaseBase,releaseBase+3,t));
-      if(group>=0){const anchor=driftingDust(plan.mediumSites[group],t);o={x:mix(o.x,anchor.x,localPack),y:mix(o.y,anchor.y,localPack)};}
+      const breakup=clamp(burstTravel(Math.max(0,t-rand(i,734)*.65))/burstTravel(6)),group=-1,localPack=0;
       const q=Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0;
-      const release=releaseBase+rand(i,284)*5.5,out=smooth(release,release+2.4,t);
-      const dx=o.x-c.x,dy=o.y-c.y,bend=Math.sin(Math.PI*q)*(rand(i,286)-.5)*.8;
-      let x=c.x+(dx*Math.cos(bend)-dy*Math.sin(bend))*(1-q);
-      let y=c.y+(dx*Math.sin(bend)+dy*Math.cos(bend))*(1-q);
-      x=mix(from.x,x,breakup);y=mix(from.y,y,breakup);
-      // Staggered bursts follow independent curved paths into the text.
-      const finish=smooth(release,release+10+rand(i,473)*7,t);
-      const flight=smooth(release,release+2.8+rand(i,474)*3,t);
-      const arc=Math.sin(Math.PI*finish),theta=rand(i,475)*TAU;
-      const reach=scale*(.45+rand(i,476)*1.65);
-      x=mix(mix(x,c.x+Math.cos(theta)*reach,flight),to.x,finish);
-      y=mix(mix(y,c.y+Math.sin(theta)*reach,flight),to.y,finish);
-      x+=arc*wanderingNoise(finish*2.3,i+478)*scale*.55;
-      y+=arc*wanderingNoise(finish*2.1,i+479)*scale*.55;
+      const release=releaseBase+rand(i,284)*.75,out=smooth(release,release+.55,t);
+      // Prey never moves toward a hunter. Contact only changes its visibility.
+      let x=mix(from.x,o.x,breakup),y=mix(from.y,o.y,breakup);
+      // Reference: a compact moving cloud stretches continuously into the strokes.
+      const morph=textMorph(i,t,release,to),finish=morph.finish;
+      if(t>=release){x=morph.x;y=morph.y;}
       // Ambient motion continues at a fixed angle; absorption stages stay angle-driven.
       const floatEnvelope=breakup*(1-finish)*(1-q)*(1-out);
-      const floatSize=(3+rand(i,401)*6)*unit*floatEnvelope;
+      const floatSize=0; // The cached drifting field is also used by hunter collisions.
       const individual=1-localPack*.7;
       x+=wanderingNoise(floatTime*(.7+rand(i,402)),i+410)*floatSize*individual;
       y+=wanderingNoise(floatTime*(.6+rand(i,403)),i+411)*floatSize*individual;
@@ -371,7 +416,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       }
       p.targetX=clamp(x,12,W-12);p.targetY=clamp(y,12,H-12);
       // Critically damped motion keeps the same response at different frame rates.
-      const omega=Math.sqrt(p.attractionStrength*(.8+rand(i,289)*.25));
+      const omega=Math.sqrt(p.attractionStrength*(.8+rand(i,289)*.25))*(t>=release?4:1);
       const decay=Math.exp(-omega*motionStep);
       const errorX=p.x-p.targetX,errorY=p.y-p.targetY;
       const driftX=(p.vx+omega*errorX)*motionStep;
@@ -380,44 +425,65 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       p.y=p.targetY+(errorY+driftY)*decay;
       p.vx=(p.vx-omega*driftX)*decay;
       p.vy=(p.vy-omega*driftY)*decay;
+      if(breakup===1 && t<releaseBase){
+        p.x=p.targetX;p.y=p.targetY;p.vx=0;p.vy=0;
+      }
       const seat=1-Math.pow(1-smooth(legEnd-7,legEnd,t),frameStep);
       p.x=mix(p.x,to.x,seat);p.y=mix(p.y,to.y,seat);p.vx*=1-seat;p.vy*=1-seat;
-      // Keep particle positions continuous when crossing a sentence boundary.
-      const reached=1-smooth(4,18*unit,Math.hypot(p.x-c.x,p.y-c.y));
-      const dock=smooth(.65,1,q)*Math.max(reached,smooth(.94,1,q))*(1-out);
-      const sparse=rand(i,430)<.16?1:1-smooth(1,10,t)*(1-Math.max(out,finish));
+      // Endpoint geometry must be exact, regardless of frame rate or previous angle.
+      if(t===0 || t===legEnd){
+        const endpoint=t===0?from:to;
+        p.x=endpoint.x;p.y=endpoint.y;p.vx=0;p.vy=0;
+      }
+      const dock=q*(1-out);
+      const sparse=1; // Dust stays visible until it is swallowed.
       p.merge=dock;p.displayRadius=p.radius*Math.sqrt(Math.max(0,1-dock))*Math.sqrt(1-localPack)*sparse;
       const m=p.radius*p.radius*(1-dock)*localPack;
       if(m>0){if(!medium.has(group))medium.set(group,{x:0,y:0,mass:0});const b=medium.get(group);b.x+=p.x*m;b.y+=p.y*m;b.mass+=m;}
       c.mass+=p.radius*p.radius*dock;c.swallowed+=dock;
-      const inkZ=(rand(i,510)-.5)*scale*.30;
-      const dustZ=(rand(i,511)-.5)*scale*3.8+wanderingNoise(t*.025,i+512)*scale*.35;
-      const coreZ=Math.sin(t*.045+leg)*scale*.48;
-      let z=mix(inkZ,mix(dustZ,coreZ,q),breakup);
-      z=mix(z,inkZ,finish)+Math.sin(Math.PI*finish)*(rand(i,513)-.5)*scale*4.5;
+      const inkZ=0;
+      const dustZ=c.z;
+      const coreZ=c.z;
+      let z=mix(inkZ,dustZ,breakup);
+      if(t>=release)z=morph.z;
       z=mix(z,coreZ,dock);p.depth=z;
-      if(p.displayRadius>.08)scene.push({x:p.x,y:p.y,z,radius:p.displayRadius});
+      if(p.displayRadius>.08)scene.push({x:p.x,y:p.y,z,radius:p.displayRadius*mix(1,.65+rand(i,714)*.9,floatEnvelope)});
     }
-    for(const b of medium.values()){
-      const bead={x:b.x/b.mass,y:b.y/b.mass,radius:Math.sqrt(b.mass)*.56,mass:b.mass};
-      lastMeso.push(bead);scene.push({...bead,z:Math.sin(t*.045+leg)*scale*.48});
+    const coreZ=0;
+    if(merge===1){
+      const mass=cores.reduce((sum,c)=>sum+c.mass,0);
+      const c={x:W/2,y:H/2,mass,z:coreZ,radius:44*unit*(1-Math.exp(-Math.sqrt(mass)*.8/(44*unit)))};
+      coreState=[c];
+      if(c.radius>.08)scene.push(c);
+    }else{
+      cores.forEach((c,j)=>{
+        const born=smooth(plan.hunters[j].birth,plan.hunters[j].birth+2.5+rand(j,628)*3,t);
+        c.radius=(1.8+Math.sqrt(c.mass)*.55)*unit*born*(1-smooth(releaseBase,releaseBase+3,t));
+        if(c.radius>.08)scene.push({...c});
+      });
     }
-    c.radius=44*unit*(1-Math.exp(-Math.sqrt(c.mass)*.8/(44*unit)));
-    c.z=Math.sin(t*.045+leg)*scale*.48;
-    if(c.radius>.08)scene.push({...c,z:c.z});
-    // Depth sorting provides occlusion, with perspective and sphere shading.
-    scene.sort((a,b)=>a.z-b.z);
+    // Rotate the volume, then sort by camera depth so near spheres occlude far ones.
     const focal=Math.max(460,scale*8);
-    const yaw=.10*Math.sin(a*DEG),pitch=.055*Math.sin(a*DEG*2);
-    for(const bead of scene){
-      const dx=bead.x-cx,dy=bead.y-cy;
-      const z=bead.z-dx*Math.sin(yaw)-dy*Math.sin(pitch);
-      const perspective=focal/(focal-z);
-      const x=cx+(dx*Math.cos(yaw)+bead.z*Math.sin(yaw))*perspective;
-      const y=cy+(dy*Math.cos(pitch)+bead.z*Math.sin(pitch))*perspective;
+    const space=smooth(0,6,t)*(1-smooth(legEnd-8,legEnd,t));
+    const yaw=(.32*Math.sin(a*DEG)+.07*Math.sin(floatTime*.23))*space*(1-merge);
+    const pitch=(.20*Math.sin(a*DEG*1.4)+.05*Math.cos(floatTime*.19))*space*(1-merge);
+    const projectionX=W/2,projectionY=H/2;
+    const projected=scene.map(bead=>{
+      const dx=bead.x-projectionX,dy=bead.y-projectionY;
+      const rx=dx*Math.cos(yaw)+bead.z*Math.sin(yaw);
+      const rz=bead.z*Math.cos(yaw)-dx*Math.sin(yaw);
+      const ry=dy*Math.cos(pitch)+rz*Math.sin(pitch);
+      const z=rz*Math.cos(pitch)-dy*Math.sin(pitch);
+      return {...bead,rx,ry,z};
+    }).sort((a,b)=>a.z-b.z);
+    for(const bead of projected){
+      const z=bead.z;
+      const perspective=focal/Math.max(focal*.3,focal-z);
+      const x=projectionX+bead.rx*perspective;
+      const y=projectionY+bead.ry*perspective;
       const r=Math.max(.08,bead.radius*perspective);
-      ctx.globalAlpha=clamp(.76+z/(scale*6),.38,1);
-      if(r>3){
+      ctx.globalAlpha=mix(1,clamp(.68+z/(scale*6),.22,1),space);
+      if(r>1.6){
         const shade=ctx.createRadialGradient(x-r*.32,y-r*.35,r*.04,x,y,r);
         shade.addColorStop(0,'#fff');shade.addColorStop(.42,'#ededed');
         shade.addColorStop(.8,'#b0b6c0');shade.addColorStop(1,'#555e6d');
@@ -436,7 +502,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     if(ready){huntPaths=[null,null];mesoPlans=[null,null];rebuild();paint(current);}
   }
   function stage(p){
-    const t=((p*360)%180)/180*(activeRelease+24);
+    const t=animationTime(clamp((((p*360)%180)-3)/174),activeRelease+24);
     if(t<.1)return Math.floor(p*2)%2===0?'01 / 決定・正向':'01 / 期待・倒置';
     if(t<3)return '02 / 隨機散開';
     if(t<12)return '03 / 漂浮中開始凝聚';
@@ -538,12 +604,13 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       const ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cg=Math.cos(g),sg=Math.sin(g);
       qNow[0]=ca*sb*cg-sa*cb*sg;qNow[1]=ca*cb*sg+sa*sb*cg;
       qNow[2]=ca*sb*sg+sa*cb*cg;qNow[3]=ca*cb*cg-sa*sb*sg;
-      if(prevQ===null){qPrevious.set(qNow);prevQ=true;return;}
+      if(prevQ===null){qPrevious.set(qNow);rawRoll=0;prevQ=true;return;}
       let w=qPrevious[3]*qNow[3]+qPrevious[0]*qNow[0]+qPrevious[1]*qNow[1]+qPrevious[2]*qNow[2];
       let z=qPrevious[3]*qNow[2]-qPrevious[2]*qNow[3]-qPrevious[0]*qNow[1]+qPrevious[1]*qNow[0];
       if(w<0){w=-w;z=-z;}
-      delta=-2*Math.atan2(z,w)/DEG;
-      qPrevious.set(qNow);
+      const roll=-2*Math.atan2(z,w)/DEG;
+      delta=roll-rawRoll;rawRoll=roll;
+      if(delta>180)delta-=360;if(delta< -180)delta+=360;
     }
     // Reject a sensor restart/outlier, not normal wraparound.
     if(!Number.isFinite(delta)||Math.abs(delta)>55)return;

@@ -251,6 +251,9 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   function burstTravel(elapsed){
     return elapsed<=0?0:1-Math.exp(-elapsed*.75);
   }
+  function scatterProgress(i,t){
+    return clamp(burstTravel(Math.max(0,t-rand(i,734)*.65))/burstTravel(6));
+  }
   function organicScatter(i,salt){
     const v=burstVector(i);
     const fit=Math.min(1,(W*.42)/(scale*2.95),(H*.3)/(scale*2.95));
@@ -347,28 +350,42 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
 
   function textMorph(i,t,release,to){
-    // Independent departures and routes assemble the sentence in a random order.
-    const departure=release+rand(i,761)*8;
-    const duration=5+rand(i,762)*8;
-    const finish=smooth(departure,departure+duration,t);
-    const envelope=Math.sin(Math.PI*finish)*(1-finish);
-    const bendX=(rand(i,763)-.5)*scale*.95;
-    const bendY=(rand(i,764)-.5)*scale*.95;
+    // Dense central dust with a sparse, irregular outer halo, as in the reference.
+    const departure=release+rand(i,761)*.08;
+    const duration=14+rand(i,762)*9;
+    const travel=clamp((t-departure)/duration);
+    // Start moving immediately, then ease continuously into the final ink.
+    const finish=1-Math.pow(1-travel,2);
+    const settle=finish*finish;
+    const envelope=Math.sin(Math.PI*finish);
+    const azimuth=rand(i,771)*TAU;
+    const depth=rand(i,772)*2-1;
+    const plane=Math.sqrt(1-depth*depth);
+    const distance=scale*(.08+Math.pow(rand(i,773),2.7)*3.5);
     const seedAngle=rand(i,765)*TAU;
-    const seedRadius=Math.sqrt(rand(i,766))*16;
+    const seedRadius=Math.sqrt(rand(i,766))*14;
     const startX=W/2+Math.cos(seedAngle)*seedRadius;
     const startY=H/2+Math.sin(seedAngle)*seedRadius;
+    const burstX=Math.cos(azimuth)*plane*distance;
+    const burstY=Math.sin(azimuth)*plane*distance;
     return {
-      x:mix(startX,to.x,finish)+bendX*envelope,
-      y:mix(startY,to.y,finish)+bendY*envelope,
-      z:(rand(i,767)-.5)*scale*.6*envelope,
+      x:mix(startX,to.x,settle)+burstX*envelope,
+      y:mix(startY,to.y,settle)+burstY*envelope,
+      z:depth*distance*1.4*envelope,
       finish,departure
     };
   }
   function animationTime(progress,legEnd){
-    // Complete aggregation in the first 42% of the half-turn.
     const joined=legEnd-24;
-    return progress<=.42?progress/.42*joined:mix(joined,legEnd,(progress-.42)/.58);
+    const leftSpeed=joined/.42,rightSpeed=24/.58;
+    // Blend the speed change across aggregation and release instead of braking abruptly.
+    const low=.36,high=.48;
+    if(progress<=low)return progress*leftSpeed;
+    if(progress>=high)return joined+(progress-.42)*rightSpeed;
+    const span=high-low,u=(progress-low)/span;
+    const start=low*leftSpeed,end=joined+(high-.42)*rightSpeed;
+    return (2*u*u*u-3*u*u+1)*start+(u*u*u-2*u*u+u)*span*leftSpeed
+      +(-2*u*u*u+3*u*u)*end+(u*u*u-u*u)*span*rightSpeed;
   }
   function render(angle){
     if(!ready)return;
@@ -398,14 +415,15 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       const i=p.seed,ph=p.noiseOffset,from=leg?p.originB:p.originA,to=leg?p.originA:p.originB;
       const c=cores[plan.owner[i]];
       let o=driftingDust(plan.cloud[i],t);
-      const breakup=clamp(burstTravel(Math.max(0,t-rand(i,734)*.65))/burstTravel(6)),group=-1,localPack=0;
+      const breakup=scatterProgress(i,t),group=-1,localPack=0;
       const q=Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0;
       const release=releaseBase;
       // Prey never moves toward a hunter. Contact only changes its visibility.
       let x=mix(from.x,o.x,breakup),y=mix(from.y,o.y,breakup);
       // Assemble in scattered, independent departures rather than a synchronized radial burst.
       const morph=textMorph(i,t,release,to),finish=morph.finish;
-      const out=smooth(morph.departure,morph.departure+.45,t);
+      // The solid core rapidly crumbles into fine dust instead of splitting into balls.
+      const out=smooth(morph.departure,morph.departure+.42,t);
       if(t>=release){x=morph.x;y=morph.y;}
       // Ambient motion continues at a fixed angle; absorption stages stay angle-driven.
       const floatEnvelope=breakup*(1-finish)*(1-q)*(1-out);
@@ -431,8 +449,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       if((breakup===1 && t<releaseBase) || t>=releaseBase){
         p.x=p.targetX;p.y=p.targetY;p.vx=0;p.vy=0;
       }
-      const seat=1-Math.pow(1-smooth(legEnd-7,legEnd,t),frameStep);
-      p.x=mix(p.x,to.x,seat);p.y=mix(p.y,to.y,seat);p.vx*=1-seat;p.vy*=1-seat;
+      // Each route eases into the text itself, without a second seating animation.
       // Endpoint geometry must be exact, regardless of frame rate or previous angle.
       if(t===0 || t===legEnd){
         const endpoint=t===0?from:to;
@@ -455,7 +472,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     const coreZ=0;
     if(merge===1){
       const mass=cores.reduce((sum,c)=>sum+c.mass,0);
-      const c={x:W/2,y:H/2,mass,z:coreZ,radius:44*unit*(1-Math.exp(-Math.sqrt(mass)*.8/(44*unit)))};
+      const c={x:W/2,y:H/2,mass,z:coreZ,radius:44*unit*(1-Math.exp(-Math.sqrt(mass)*.8/(44*unit)))*(1-smooth(releaseBase,releaseBase+.7,t))};
       coreState=[c];
       if(c.radius>.08)scene.push(c);
     }else{

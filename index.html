@@ -412,11 +412,15 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     for(const p of particles){
       const i=p.seed,from=reverse?(leg?p.originA:p.originB):(leg?p.originB:p.originA),c=cores[plan.owner[i]];
       const o=driftingDust(plan.cloud[i],t);
-      // Let the letter shapes loosen gently before the dots fully separate.
-      // Stagger departures slightly so the sentence does not burst apart at once.
-      const breakup=smooth(.6+rand(i,734)*.8,12+rand(i,735)*3,forward);
+      // Reserve the first ten degrees for readable, gently moving letter shapes.
+      // Individual departures overlap across 10–40 degrees, with no timed hold.
+      const breakup=smooth(10+rand(i,734)*12,25+rand(i,735)*15,forward);
       const q=(Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0)*breakup;
-      p.x=p.targetX=mix(from.x,o.x,breakup);p.y=p.targetY=mix(from.y,o.y,breakup);
+      const letterMotion=smooth(0,10,forward)*(1-smooth(10,25,forward))*(1-breakup);
+      const swayX=Math.sin(forward*.18)*unit*1.2*letterMotion;
+      const swayY=(Math.cos(forward*.14)-1)*unit*.7*letterMotion;
+      p.x=p.targetX=mix(from.x,o.x,breakup)+swayX;
+      p.y=p.targetY=mix(from.y,o.y,breakup)+swayY;
       p.vx=p.vy=0;p.merge=q;p.depth=c.z*breakup;
       p.displayRadius=p.radius*Math.sqrt(1-q);
       c.mass+=p.radius*p.radius*q;
@@ -580,8 +584,10 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   function stage(p){
     const phase=(p*360)%180;
     if(phase<3||phase>177)return '01 / 文字排列完成';
-    if(phase<24)return '02 / 小點散開';
-    if(phase<45)return '03 / 小點合成中點';
+    if(phase<10)return '02 / 字形輕輕鬆動';
+    if(phase<25)return '03 / 文字逐步鬆開';
+    if(phase<40)return '04 / 點點逐漸散開';
+    if(phase<45)return '05 / 小點合成中點';
     if(phase<90)return '04 / 一顆大點逐步吃完剩餘點點';
     if(phase<135)return '05 / 大點反向散開成點點';
     return '06 / 小點重新排列成文字';

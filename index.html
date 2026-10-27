@@ -74,6 +74,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   let target=0,current=0,vel=0,last=performance.now(),lastPaint=NaN,lastUI=0;
   let auto=false,autoOrigin=0,autoBegin=0,autoDuration=18000;
   let sensor=false,sensorGotData=false,prevQ=null,accum=0,timeoutID=0;
+  let sensorTextAnchor=null;
   let direction=1,sensitivity=1,sensorType='roll',rawHeading=null,rawRoll=0;
   let gain=1,clean=false,scrubbing=false;
   const params=new URLSearchParams(location.search);
@@ -605,7 +606,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
   function say(message) {$('status').textContent=message;}
   function detachSensor() {
-    sensor=false;prevQ=null;rawHeading=null;clearTimeout(timeoutID);
+    sensor=false;sensorTextAnchor=null;prevQ=null;rawHeading=null;clearTimeout(timeoutID);
     window.removeEventListener('deviceorientation',onOrientation);
   }
   function manual(angle,immediate=false) {
@@ -640,13 +641,18 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     if(sensor){
       // Sensor deltas have already been shortest-angle unwrapped. Filter the
       // continuous angle so 359 -> 0 never takes a full reverse turn.
-      current=mix(current,target,1-Math.pow(.88,dt*60));vel=0;
+      const textAngle=Math.round(target/180)*180;
+      if(sensorTextAnchor!==null&&Math.abs(target-sensorTextAnchor)>3)sensorTextAnchor=null;
+      if(sensorTextAnchor===null&&Math.abs(target-textAngle)<=1.5)sensorTextAnchor=textAngle;
+      current=sensorTextAnchor!==null?sensorTextAnchor:mix(current,target,1-Math.exp(-dt/.055));
+      vel=0;
+      if(sensorTextAnchor===null&&Math.abs(current-target)<.025)current=target;
     }
     const omega=24,decay=Math.exp(-omega*dt),err=current-target;
     const t=(vel+omega*err)*dt;
     if(!sensor){current=target+(err+t)*decay;vel=(vel-omega*t)*decay;}
 
-    if(Math.abs(current-target)<.0005&&Math.abs(vel)<.005){current=target;vel=0;}
+    if((!sensor||sensorTextAnchor===null)&&Math.abs(current-target)<.0005&&Math.abs(vel)<.005){current=target;vel=0;}
     frameStep=dt*60;paint(current);
     frameMS=frameMS*.97+dt*1000*.03;
     // Do not rebuild particle identities in the middle of a transition.
@@ -696,12 +702,14 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       const ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cg=Math.cos(g),sg=Math.sin(g);
       qNow[0]=ca*sb*cg-sa*cb*sg;qNow[1]=ca*cb*sg+sa*sb*cg;
       qNow[2]=ca*sb*sg+sa*cb*cg;qNow[3]=ca*cb*cg-sa*sb*sg;
-      if(prevQ===null){qPrevious.set(qNow);rawRoll=0;prevQ=true;return;}
+      if(prevQ===null){qPrevious.set(qNow);prevQ=true;return;}
       let w=qPrevious[3]*qNow[3]+qPrevious[0]*qNow[0]+qPrevious[1]*qNow[1]+qPrevious[2]*qNow[2];
       let z=qPrevious[3]*qNow[2]-qPrevious[2]*qNow[3]-qPrevious[0]*qNow[1]+qPrevious[1]*qNow[0];
+      // Measure each change in the previous device frame, then advance the baseline.
+      qPrevious.set(qNow);
       if(w<0){w=-w;z=-z;}
-      const roll=-2*Math.atan2(z,w)/DEG;
-      delta=roll-rawRoll;rawRoll=roll;
+      if(Math.hypot(w,z)<1e-8)return;
+      delta=-2*Math.atan2(z,w)/DEG;
       if(delta>180)delta-=360;if(delta< -180)delta+=360;
     }
     // Reject a sensor restart/outlier, not normal wraparound.
@@ -721,7 +729,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
         const result=await DeviceOrientationEvent.requestPermission();
         if(result!=='granted'){say(UI.denied);updateUI();return;}
       }
-      sensor=true;sensorGotData=false;prevQ=null;rawHeading=null;
+      sensor=true;sensorGotData=false;sensorTextAnchor=null;prevQ=null;rawHeading=null;
       accum=0;target=0;current=0;vel=0;paint(0);
       window.addEventListener('deviceorientation',onOrientation,{passive:true});
       say(UI.waitSensor);updateUI();
@@ -732,13 +740,13 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
   $('gyro').addEventListener('click',enableGyro);
   $('calibrate').addEventListener('click',()=>{
-    accum=0;prevQ=null;rawHeading=null;target=0;current=0;vel=0;auto=false;paint(0);say(UI.calibrated);updateUI();
+    accum=0;sensorTextAnchor=null;prevQ=null;rawHeading=null;target=0;current=0;vel=0;auto=false;paint(0);say(UI.calibrated);updateUI();
   });
   $('axis').addEventListener('change',e=>{
-    sensorType=e.target.value;prevQ=null;rawHeading=null;accum=current;say(UI.axisChanged);
+    sensorType=e.target.value;sensorTextAnchor=null;prevQ=null;rawHeading=null;accum=current;say(UI.axisChanged);
   });
-  $('direction').addEventListener('change',e=>{direction=e.target.checked?-1:1;prevQ=null;rawHeading=null;accum=current;});
-  $('sensitivity').addEventListener('change',e=>{sensitivity=Number(e.target.value);accum=current;});
+  $('direction').addEventListener('change',e=>{direction=e.target.checked?-1:1;sensorTextAnchor=null;prevQ=null;rawHeading=null;accum=current;});
+  $('sensitivity').addEventListener('change',e=>{sensitivity=Number(e.target.value);sensorTextAnchor=null;accum=current;});
   function setClean(on) {
     clean=on;document.body.classList.toggle('clean',on);
     $('restore').hidden=!on||lockedForCapture;

@@ -388,6 +388,8 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       +(-2*u*u*u+3*u*u)*end+(u*u*u-u*u)*span*rightSpeed;
   }
   let pursuitPlaybackRate=1,filteredPlaybackRate=1;
+  const TEXT_HOLD_SECONDS=0;
+  let textHoldRemaining=0;
   function render(angle){
     if(!ready)return;
     const a=cycle(angle),leg=Math.floor(a/180)%2,phase=a%180;
@@ -409,8 +411,11 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';
     for(const p of particles){
       const i=p.seed,from=reverse?(leg?p.originA:p.originB):(leg?p.originB:p.originA),c=cores[plan.owner[i]];
-      const o=driftingDust(plan.cloud[i],t),breakup=scatterProgress(i,t);
-      const q=Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0;
+      const o=driftingDust(plan.cloud[i],t);
+      // Let the letter shapes loosen gently before the dots fully separate.
+      // Stagger departures slightly so the sentence does not burst apart at once.
+      const breakup=smooth(.6+rand(i,734)*.8,12+rand(i,735)*3,forward);
+      const q=(Number.isFinite(plan.start[i])?smooth(plan.start[i],plan.end[i],t):0)*breakup;
       p.x=p.targetX=mix(from.x,o.x,breakup);p.y=p.targetY=mix(from.y,o.y,breakup);
       p.vx=p.vy=0;p.merge=q;p.depth=c.z*breakup;
       p.displayRadius=p.radius*Math.sqrt(1-q);
@@ -599,13 +604,15 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     window.removeEventListener('deviceorientation',onOrientation);
   }
   function manual(angle,immediate=false) {
-    auto=false;detachSensor();target=Number.isFinite(Number(angle))?Number(angle):0;
+    auto=false;textHoldRemaining=0;detachSensor();target=Number.isFinite(Number(angle))?Number(angle):0;
     if(immediate){current=target;vel=0;paint(current);}
     say(UI.manualHelp);updateUI();
   }
   function startAuto() {
     detachSensor();
-    autoOrigin=current;autoBegin=performance.now();filteredPlaybackRate=pursuitPlaybackRate;auto=true;
+    autoOrigin=current;autoBegin=performance.now();filteredPlaybackRate=pursuitPlaybackRate;
+    textHoldRemaining=Math.abs(current/180-Math.round(current/180))<.00001?TEXT_HOLD_SECONDS:0;
+    auto=true;
     say(UI.previewHelp);updateUI();
   }
   function tick(now) {
@@ -613,7 +620,16 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     if(auto) {
       // Match visible pursuit movement to the preceding roaming speed.
       filteredPlaybackRate=mix(filteredPlaybackRate,pursuitPlaybackRate,1-Math.exp(-14*dt));
-      target+=dt*8*filteredPlaybackRate*direction;
+      if(textHoldRemaining>0){
+        textHoldRemaining=Math.max(0,textHoldRemaining-dt);
+      }else{
+        const boundary=direction>0?(Math.floor(target/180)+1)*180:(Math.ceil(target/180)-1)*180;
+        const next=target+dt*8*filteredPlaybackRate*direction;
+        if(direction>0?next>=boundary:next<=boundary){
+          target=boundary;current=boundary;vel=0;
+          textHoldRemaining=TEXT_HOLD_SECONDS;
+        }else target=next;
+      }
     }
     // Analytic, critically damped spring. Frame-rate independent, no bouncing.
     if(sensor){

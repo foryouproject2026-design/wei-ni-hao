@@ -396,7 +396,12 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     const a=cycle(angle),leg=Math.floor(a/180)%2,phase=a%180;
     const unit=Math.max(.7,Math.min(1.25,scale/100));
     const plan=roamingPlan(leg),legEnd=plan.completed+11;
-    const reverse=phase>90,forward=reverse?180-phase:phase;
+    const reverse=phase>90;
+    const distanceFromText=reverse?180-phase:phase;
+    // Keep text intact within 8 degrees, then gently release it into dots.
+    // Rejoin the existing movement at 45 degrees with matching speed.
+    const release=clamp((distanceFromText-8)/37);
+    const forward=distanceFromText<45?release*release*(98-53*release):distanceFromText;
     pursuitPlaybackRate=1+smooth(38,45,forward);
     const t=clamp(forward/45)*plan.completed;
     const merge=smooth(45,90,forward),floatTime=Math.min(forward,45)*.06;
@@ -630,7 +635,10 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
         textHoldRemaining=Math.max(0,textHoldRemaining-dt);
       }else{
         const boundary=direction>0?(Math.floor(target/180)+1)*180:(Math.ceil(target/180)-1)*180;
-        const next=target+dt*8*filteredPlaybackRate*direction;
+        // Slow the departure from each sentence, then ease back to normal speed.
+        const departure=cycle(target*direction)%180;
+        const breakupRate=mix(.5,1,smooth(15,25,departure));
+        const next=target+dt*8*filteredPlaybackRate*breakupRate*direction;
         if(direction>0?next>=boundary:next<=boundary){
           target=boundary;current=boundary;vel=0;
           textHoldRemaining=TEXT_HOLD_SECONDS;

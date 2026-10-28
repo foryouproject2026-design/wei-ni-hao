@@ -418,11 +418,20 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     for(const p of particles){
       const i=p.seed,from=reverse?(leg?p.originA:p.originB):(leg?p.originB:p.originA),c=cores[plan.owner[i]];
       const o=driftingDust(plan.cloud[i],t);
-      // Let the letter shapes loosen gently before the dots fully separate.
-      // Stagger departures slightly so the sentence does not burst apart at once.
+      // Release a spatial wave of strokes as the angle advances.
+      // Each point first loosens near its letter, then travels into the cloud.
+      const wave=clamp((from.x-cx)/(scale*3.2)+.5);
+      const releaseAngle=3+wave*13+rand(i,734)*5;
+      const localProgress=clamp((distanceFromText-releaseAngle)/19);
+      const loosen=smooth(0,.5,localProgress);
+      const scatter=smooth(.22,1,localProgress);
       const breakup=smooth(.6+rand(i,734)*.8,12+rand(i,735)*3,forward);
+      const theta=rand(i,736)*TAU;
+      const offset=scale*(.035+rand(i,737)*.085)*loosen;
+      const looseX=from.x+Math.cos(theta)*offset;
+      const looseY=from.y+Math.sin(theta)*offset;
       const q=(Number.isFinite(plan.start[i])?smooth(Math.max(0,plan.start[i]-1),Math.min(plan.completed,plan.end[i]+1.5),t):0)*breakup;
-      p.x=p.targetX=mix(from.x,o.x,breakup);p.y=p.targetY=mix(from.y,o.y,breakup);
+      p.x=p.targetX=mix(looseX,o.x,scatter);p.y=p.targetY=mix(looseY,o.y,scatter);
       // Finish the approach before shrinking: dust disappears only inside its eater.
       const approach=smooth(0,.72,q),swallowed=smooth(.72,1,q);
       p.x=p.targetX=mix(p.x,c.x,approach);

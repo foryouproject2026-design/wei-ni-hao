@@ -389,7 +389,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       +(-2*u*u*u+3*u*u)*end+(u*u*u-u*u)*span*rightSpeed;
   }
   let pursuitPlaybackRate=1,filteredPlaybackRate=1;
-  const TEXT_HOLD_SECONDS=0;
+  const TEXT_HOLD_SECONDS=1.5;
   let textHoldRemaining=0;
   function render(angle){
     if(!ready)return;
@@ -397,7 +397,10 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     const unit=Math.max(.7,Math.min(1.25,scale/100));
     const plan=roamingPlan(leg),legEnd=plan.completed+11;
     const reverse=phase>90;
-    const distanceFromText=reverse?180-phase:phase;
+    const textDistance=reverse?180-phase:phase;
+    // Give text more of each half-turn; compress the eating phase.
+    const distanceFromText=textDistance<40?textDistance*.6:
+      textDistance<65?24+(textDistance-40)*21/25:45+(textDistance-65)*45/25;
     // Keep text intact within 8 degrees, then gently release it into dots.
     // Rejoin the existing movement at 45 degrees with matching speed.
     const release=clamp((distanceFromText-8)/37);
@@ -421,8 +424,8 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
       // Release a spatial wave of strokes as the angle advances.
       // Each point first loosens near its letter, then travels into the cloud.
       const wave=clamp((from.x-cx)/(scale*3.2)+.5);
-      const releaseAngle=3+wave*13+rand(i,734)*5;
-      const localProgress=clamp((distanceFromText-releaseAngle)/19);
+      const releaseAngle=3+wave*8+rand(i,734)*3;
+      const localProgress=clamp((distanceFromText-releaseAngle)/30);
       const loosen=smooth(0,.5,localProgress);
       const scatter=smooth(.22,1,localProgress);
       const breakup=smooth(.6+rand(i,734)*.8,12+rand(i,735)*3,forward);
@@ -599,11 +602,11 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
   function stage(p){
     const phase=(p*360)%180;
-    if(phase<3||phase>177)return '01 / 文字排列完成';
-    if(phase<24)return '02 / 小點散開';
-    if(phase<45)return '03 / 小點合成中點';
+    if(phase<5||phase>175)return '01 / 文字排列完成';
+    if(phase<40)return '02 / 小點散開';
+    if(phase<65)return '03 / 小點合成中點';
     if(phase<90)return '04 / 一顆大點逐步吃完剩餘點點';
-    if(phase<135)return '05 / 大點反向散開成點點';
+    if(phase<115)return '05 / 大點反向散開成點點';
     return '06 / 小點重新排列成文字';
   }
 
@@ -646,7 +649,8 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
         const boundary=direction>0?(Math.floor(target/180)+1)*180:(Math.ceil(target/180)-1)*180;
         // Slow the departure from each sentence, then ease back to normal speed.
         const departure=cycle(target*direction)%180;
-        const breakupRate=mix(.5,1,smooth(15,25,departure));
+        const textProximity=Math.min(departure,180-departure);
+        const breakupRate=mix(.45,1.8,smooth(35,65,textProximity));
         const next=target+dt*8*filteredPlaybackRate*breakupRate*direction;
         if(direction>0?next>=boundary:next<=boundary){
           target=boundary;current=boundary;vel=0;

@@ -122,7 +122,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
   }
   function rebuild(){
     const a=referenceTargets(0,false),b=referenceTargets(1,true);
-    const n=Math.round(Math.min(3000,Math.max(2400,W*H/115))*quality);
+    const n=Math.round(Math.min(2000,Math.max(1600,W*H/172.5))*quality);
     clusters=[[-.88,-1.13],[.35,-1.03],[1.02,-.42],[-.21,-.28],[-1,.26],[.76,.66],[-.47,1.03],[.25,1.27]].map(([x,y])=>({x:cx+x*scale,y:cy+y*scale}));
     particles=Array.from({length:n},(_,i)=>{
       const A=a[Math.floor(i*a.length/n)],B=b[Math.floor(i*b.length/n)];
@@ -280,7 +280,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     }
     const start=particles.map(()=>Infinity),end=particles.map(()=>Infinity);
     const owner=particles.map(()=>-1);
-    const hunterCount=18+Math.floor(rand(leg,619)*9);
+    const hunterCount=5+Math.floor(rand(leg,619)*3);
     const hunters=Array.from({length:hunterCount},(_,j)=>({
       birth:j===0?8:14+Math.pow(rand(j+leg*71,621),.8)*46, x:cloud[Math.floor(rand(j+leg*17,620)*cloud.length)].x,
       y:cloud[Math.floor(rand(j+leg*17,620)*cloud.length)].y,
@@ -397,10 +397,7 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     const unit=Math.max(.7,Math.min(1.25,scale/100));
     const plan=roamingPlan(leg),legEnd=plan.completed+11;
     const reverse=phase>90;
-    const textDistance=reverse?180-phase:phase;
-    // Give text more of each half-turn; compress the eating phase.
-    const distanceFromText=textDistance<40?textDistance*.6:
-      textDistance<65?24+(textDistance-40)*21/25:45+(textDistance-65)*45/25;
+    const distanceFromText=reverse?180-phase:phase;
     // Keep text intact within 8 degrees, then gently release it into dots.
     // Rejoin the existing movement at 45 degrees with matching speed.
     const release=clamp((distanceFromText-8)/37);
@@ -642,15 +639,14 @@ details{pointer-events:auto;position:relative}summary{cursor:pointer;list-style:
     const dt=Math.min(.04,Math.max(0,(now-last)/1000));last=now;
     if(auto) {
       // Match visible pursuit movement to the preceding roaming speed.
-      filteredPlaybackRate=mix(filteredPlaybackRate,pursuitPlaybackRate,1-Math.exp(-14*dt));
+      filteredPlaybackRate=mix(filteredPlaybackRate,pursuitPlaybackRate*(1-.3*smooth(25,45,Math.min(cycle(current)%180,180-cycle(current)%180))),1-Math.exp(-14*dt));
       if(textHoldRemaining>0){
         textHoldRemaining=Math.max(0,textHoldRemaining-dt);
       }else{
         const boundary=direction>0?(Math.floor(target/180)+1)*180:(Math.ceil(target/180)-1)*180;
         // Slow the departure from each sentence, then ease back to normal speed.
         const departure=cycle(target*direction)%180;
-        const textProximity=Math.min(departure,180-departure);
-        const breakupRate=mix(.45,1.8,smooth(35,65,textProximity));
+        const breakupRate=mix(.5,1,smooth(15,25,departure));
         const next=target+dt*8*filteredPlaybackRate*breakupRate*direction;
         if(direction>0?next>=boundary:next<=boundary){
           target=boundary;current=boundary;vel=0;
